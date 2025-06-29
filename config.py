@@ -1,4 +1,3 @@
-# config.py
 
 # --- Umgebungsparameter ---
 ENV_NAME = "CartPole-v1"
