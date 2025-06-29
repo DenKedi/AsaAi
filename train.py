@@ -43,9 +43,14 @@ def train(
     # --- Epsilon-Setup für diesen spezifischen Lauf ---
     eps = config.EPS_START
 
-    def get_epsilon_step():
+    def get_epsilon_step(): #linear
         nonlocal eps  # Greift auf die 'eps'-Variable der äußeren train-Funktion zu
         eps = max(config.EPS_END, eps - decay_factor)
+        return eps
+
+    def getEpsilonExp():
+        global eps
+        eps = max(config.EPS_END, eps * decay_factor)
         return eps
 
     # --- Trainings-Loop ---
@@ -55,10 +60,11 @@ def train(
     for episode in range(config.MAX_EPISODES):
         state, _ = env.reset()
         total_reward = 0
+        #epsilon = get_epsilon_step() #epsilon linear decay per Episode (normal)
 
         for step in range(config.MAX_STEPS):
             global_step += 1
-            epsilon = get_epsilon_step()
+            epsilon = get_epsilon_step() #epsilon linear decay per Step (schnell)
 
             if random.random() < epsilon:
                 action = env.action_space.sample()
