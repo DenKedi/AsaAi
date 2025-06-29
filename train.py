@@ -59,6 +59,7 @@ def train(
 
     for episode in range(config.MAX_EPISODES):
         state, _ = env.reset()
+        state = np.array(state, dtype=np.float32)
         total_reward = 0
         #epsilon = get_epsilon_step() #epsilon linear decay per Episode (normal)
 
@@ -76,6 +77,7 @@ def train(
 
             next_state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
+            next_state = np.array(next_state, dtype=np.float32)
 
             replay_buffer.push(state, action, reward, next_state, done)
             state = next_state
@@ -109,6 +111,6 @@ def train(
     return avg_reward_last_50
 
 
-# Dieser Block erlaubt es, train.py auch direkt für einen einzelnen Lauf zu starten
+#Dieser Block erlaubt es, train.py auch direkt für einen einzelnen Lauf zu starten
 if __name__ == '__main__':
     train()
