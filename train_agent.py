@@ -2,9 +2,13 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import pygame
+from collections import Counter
 import sys
 from stable_baselines3 import DQN
 from stable_baselines3.common.env_checker import check_env
+# NEUER IMPORT für die standardisierte Evaluierung
+from stable_baselines3.common.evaluation import evaluate_policy
+import time
 
 
 # ==============================================================================
@@ -16,19 +20,28 @@ class HulaHoopEnv(gym.Env):
     def __init__(self, render_mode=None):
         super().__init__()
 
-        # === NEU: Definiere Aktions- und Beobachtungsraum ===
         # Aktion: 0 (nichts tun) oder 1 (Schwung geben)
         self.action_space = spaces.Discrete(2)
 
         # Beobachtung: Ein Vektor mit 3 Werten:
-        # [hoop_y, hoop_y_velocity, swing_speed]
         self.observation_space = spaces.Box(
             low=np.array([-np.inf, -np.inf, 0], dtype=np.float32),
             high=np.array([np.inf, np.inf, np.inf], dtype=np.float32),
             dtype=np.float32
         )
 
-        # === DEIN SPIELCODE, JETZT TEIL DER KLASSE ===
+        # Zustandsvariablen
+        self.hoop_y = 0.0
+        self.hoop_y_velocity = 0.0
+        self.swing_speed = 0.0
+
+        # HUD-Anzeige
+        self.current_episode_steps = 0
+        self.current_episode_reward = 0.0
+        self.last_action = 0
+        self.last_reward = 0.0
+
+        # SPIELCODE
         self.SCREEN_WIDTH = 800
         self.SCREEN_HEIGHT = 600
         self.BACKGROUND_COLOR = (20, 30, 40)
@@ -65,16 +78,24 @@ class HulaHoopEnv(gym.Env):
         return np.array([self.hoop_y, self.hoop_y_velocity, self.swing_speed], dtype=np.float32)
 
     def _get_info(self):
-        """Gibt zusätzliche Informationen zurück (optional)."""
+        """Gibt zusätzliche Informationen zurück."""
         return {"swing_speed": self.swing_speed}
 
     def reset(self, seed=None, options=None):
-        """Setzt das Spiel auf den Anfangszustand zurück."""
-        super().reset(seed=seed)
+        """Setzt das Spiel auf einen leicht ZUFÄLLIGEN Anfangszustand zurück."""
+        super().reset(seed=seed)  # Diese Zeile ist wichtig, sie initialisiert den Zufallsgenerator self.np_random
 
-        self.hoop_y = self.robot_y + self.robot_height / 2
+        # Startposition des Reifens (+/- 20 Pixel um die Mitte)
+        sweet_spot_center = self.robot_y + self.robot_height / 2
+        self.hoop_y = sweet_spot_center + self.np_random.uniform(-20, 20)
+
+        # Start-Schwunggeschwindigkeit leicht variieren
+        self.swing_speed = self.np_random.uniform(7.0, 10.0)
+
+        # Start-Geschwindigkeit auf 0 lassen, um es nicht zu schwer zu machen
         self.hoop_y_velocity = 0.0
-        self.swing_speed = 8.0
+        self.current_episode_steps = 0
+        self.current_episode_reward = 0.0
 
         if self.render_mode == "human":
             self._render_frame()
@@ -82,13 +103,14 @@ class HulaHoopEnv(gym.Env):
         return self._get_obs(), self._get_info()
 
     def step(self, action):
-        """Führt einen Spielschritt aus."""
+        """Führt einen Spielschritt aus und aktualisiert alle HUD-Daten."""
+
         # --- Aktion ausführen ---
         if action == 1:
             self.swing_speed += self.SWING_BOOST
             self.hoop_y_velocity -= self.KICK_POWER
 
-        # --- Physik-Update (dein Code) ---
+        # --- Physik-Update ---
         self.swing_speed *= self.SWING_DECAY
         lift_force = self.swing_speed * self.LIFT_FACTOR
         if self.swing_speed > self.SWEET_SPOT_MAX:
@@ -98,111 +120,184 @@ class HulaHoopEnv(gym.Env):
 
         # --- Zustand prüfen und Belohnung (Reward) definieren ---
         terminated = self.hoop_y > self.GAME_OVER_BOTTOM or self.hoop_y < self.GAME_OVER_TOP
+        info = self._get_info()
 
-        # ==========================================================
-        # NEUE, BESSERE REWARD-LOGIK
-        # ==========================================================
+        # Reward-Logik
         reward = 0
         if terminated:
-            reward = -100  # Große Strafe für's Verlieren bleibt
+            reward = -100  # Große Strafe für's Verlieren
+            if self.hoop_y > self.GAME_OVER_BOTTOM:
+                info["termination_reason"] = "Gefallen"
+            else:
+                info["termination_reason"] = "Hochgeflogen"
         else:
             # Belohnung dafür, in der Nähe des Zentrums zu sein
             sweet_spot_center = self.robot_y + self.robot_height / 2
             distance_to_center = abs(self.hoop_y - sweet_spot_center)
 
             # Die Belohnung ist höher, je näher der Reifen am Zentrum ist.
-            # Max. Belohnung = 2.0, Min. Belohnung = 0
-            # Die 80 ist hier die Höhe der "Sweet Spot Zone" aus dem alten Code.
             max_distance = 80
             if distance_to_center < max_distance:
                 # Linearer Bonus: 2.0 wenn perfekt im Zentrum, 0 am Rand der Zone.
                 reward = 2.0 * (1 - (distance_to_center / max_distance))
 
-            # Kleine "Überlebensbelohnung" kann man zusätzlich geben, ist aber optional
-            reward += 0.1
+            # Bestrafung für hohe Geschwindigkeit (optional, wie von Ihnen hinzugefügt)
+            reward -= abs(self.hoop_y_velocity) * 0.1
+
+        # ==========================================================
+        # HIER KOMMT DIE LOGIK FÜR DAS HUD HINZU
+        # ==========================================================
+        # Speichere die aktuelle Aktion und Belohnung als Instanzvariablen,
+        # damit die _render_frame-Methode darauf zugreifen kann.
+        self.last_action = action
+        self.last_reward = reward
+
+        # Aktualisiere die Zähler für die laufende Episode.
+        self.current_episode_steps += 1
+        self.current_episode_reward += reward
         # ==========================================================
 
+        # Rendere den Frame, wenn der Modus auf "human" gesetzt ist.
         if self.render_mode == "human":
             self._render_frame()
 
-        return self._get_obs(), reward, terminated, False, self._get_info()
+        # Gib alle notwendigen Werte zurück.
+        return self._get_obs(), reward, terminated, False, info
     def render(self):
-        """Diese Methode wird für das Anzeigen des Spiels aufgerufen."""
+        """Anzeigen des Spiels """
         if self.render_mode == "human":
             return self._render_frame()
 
+        # In der HulaHoopEnv-Klasse:
+
     def _render_frame(self):
-        """Enthält deine gesamte Zeichen-Logik."""
+        """Enthält die gesamte Zeichen-Logik inkl. neuem HUD."""
         if self.screen is None:
             pygame.init()
             self.screen = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
-            pygame.display.set_caption("Hula Hoop Roboter - KI Training")
+            pygame.display.set_caption("Hula Hoop Roboter - KI Interaktion")
             self.clock = pygame.time.Clock()
-            self.font = pygame.font.Font(None, 36)
+            self.font = pygame.font.Font(None, 28)  # Etwas kleinere Schrift für mehr Text
 
-        # Dein gesamter Zeichen-Code
+        # Hintergrund und Objekte zeichnen (wie bisher)
         self.screen.fill(self.BACKGROUND_COLOR)
         pygame.draw.rect(self.screen, self.ROBOT_COLOR, self.robot_rect)
         pygame.draw.rect(self.screen, self.ROBOT_COLOR, self.robot_head_rect)
-
         hoop_width = 150 + (self.hoop_y - self.robot_y) * 0.1
         hoop_rect = pygame.Rect(self.robot_x + self.robot_width / 2 - hoop_width / 2, self.hoop_y, hoop_width, 25)
         pygame.draw.ellipse(self.screen, self.HOOP_COLOR, hoop_rect, 6)
 
-        swing_text = self.font.render(f"Schwung: {self.swing_speed:.1f}", True, self.WHITE)
-        self.screen.blit(swing_text, (10, 10))
+        # ==========================================================
+        # NEUES, DETAILLIERTES HEADS-UP DISPLAY (HUD)
+        # ==========================================================
+        hud_texts = [
+            "--- AGENTEN-STATUS ---",
+            f"Schwung: {self.swing_speed:.2f}",
+            f"Position Y: {self.hoop_y:.2f}",
+            f"Geschwindigkeit Y: {self.hoop_y_velocity:.2f}",
+            "--- AKTION & BELOHNUNG ---",
+            f"Letzte Aktion: {'Schwung geben' if self.last_action == 1 else 'Nichts tun'}",
+            f"Frame-Belohnung: {self.last_reward:.2f}",
+            "--- EPISODEN-STATUS ---",
+            f"Schritte: {self.current_episode_steps}",
+            f"Gesamtbelohnung: {self.current_episode_reward:.2f}",
+        ]
 
+        # Zeichne jede Zeile des HUD
+        for i, text in enumerate(hud_texts):
+            text_surface = self.font.render(text, True, self.WHITE)
+            self.screen.blit(text_surface, (10, 10 + i * 25))  # 25 Pixel Abstand pro Zeile
+
+        # Pygame-Events und Display-Update (wie bisher)
         pygame.event.pump()
         pygame.display.flip()
         self.clock.tick(self.metadata["render_fps"])
 
     def close(self):
-        """Räumt Pygame auf, wenn die Umgebung geschlossen wird."""
+        """Aufräumen"""
         if self.screen is not None:
             pygame.display.quit()
             pygame.quit()
 
 
-# ==============================================================================
-# SCHRITT 4: AGENTEN ERSTELLEN UND TRAINIEREN
-# ==============================================================================
 if __name__ == '__main__':
-    # 1. Erstelle eine Instanz der Umgebung
-    env = HulaHoopEnv()
 
-    # Optional: Prüfe, ob deine Umgebung dem Gymnasium-Standard entspricht
-    check_env(env)
+    train_env = HulaHoopEnv()
+    check_env(train_env)
 
-    # 2. Definiere die Architektur des neuronalen Netzes
     policy_kwargs = dict(
-        net_arch=[128, 128]  # Zwei versteckte Schichten mit je 128 Neuronen
+        net_arch=[256, 256]
     )
 
-    # 3. Erstelle das DQN-Modell
     model = DQN(
         "MlpPolicy",
-        env,
+        train_env,
         policy_kwargs=policy_kwargs,
         verbose=1,
-        buffer_size=50000,
-        learning_starts=1000,
+        buffer_size=200000,
+        learning_starts=10000,
         batch_size=32,
         gamma=0.99,
         train_freq=4,
         gradient_steps=1,
-        learning_rate=1e-4,  # 0.0001
+        learning_rate=5e-5,
         tensorboard_log="./hula_dqn_tensorboard/",
         exploration_fraction=0.2,
         exploration_initial_eps=0.7,
         exploration_final_eps=0.02
     )
 
-    # 4. Trainiere das Modell
     print("Beginne mit dem Training...")
     model.learn(total_timesteps=170000, progress_bar=True)
 
-    # 5. Speichere das trainierte Modell
     model.save("hula_dqn_model")
     print("Training abgeschlossen. Modell wurde als 'hula_dqn_model.zip' gespeichert.")
 
-    env.close()
+    train_env.close()
+
+    # EVALUIERUNG DES TRAINIERTEN MODELLS
+    print("\n" + "=" * 50)
+    print("--- STARTE FINALE EVALUIERUNG DES MODELLS ---")
+    print("=" * 50)
+
+    model = DQN.load("hula_dqn_model")
+
+    # Neue Umgebung mit Grafik
+    eval_env = HulaHoopEnv(render_mode="human")
+
+    n_eval_episodes = 20
+    max_steps_per_episode = 3000
+    termination_reasons = Counter()
+    total_rewards = []
+
+    for episode in range(n_eval_episodes):
+        obs, info = eval_env.reset()
+        done = False
+        episode_reward = 0
+        episode_steps = 0
+        while not done:
+            action, _states = model.predict(obs, deterministic=True)
+            obs, reward, done, truncated, info = eval_env.step(action)
+            episode_reward += reward
+            episode_steps += 1
+
+            if episode_steps >= max_steps_per_episode:
+                break
+        if episode_steps >= max_steps_per_episode:
+            reason = "Timeout (Perfekt gespielt)"
+        else:
+            reason = info.get("termination_reason", "Unbekannt")
+        termination_reasons[reason] += 1
+        total_rewards.append(episode_reward)
+        print(
+            f"Eval-Episode {episode + 1}/{n_eval_episodes} | Schritte: {episode_steps} | Belohnung: {episode_reward:.2f} | Grund: {reason}")
+
+    # Ausgabe
+    print("\n--- EVALUIERUNGS-ZUSAMMENFASSUNG ---")
+    print(f"Durchschnittliche Belohnung über {n_eval_episodes} Episoden: {np.mean(total_rewards):.2f}")
+    print("Statistik der End-Gründe:")
+    for reason, count in termination_reasons.items():
+        print(f"- {reason}: {count} mal ({(count / n_eval_episodes) * 100:.1f}%)")
+    print("=" * 50)
+
+    eval_env.close()
