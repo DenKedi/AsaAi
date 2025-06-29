@@ -99,17 +99,33 @@ class HulaHoopEnv(gym.Env):
         # --- Zustand prüfen und Belohnung (Reward) definieren ---
         terminated = self.hoop_y > self.GAME_OVER_BOTTOM or self.hoop_y < self.GAME_OVER_TOP
 
+        # ==========================================================
+        # NEUE, BESSERE REWARD-LOGIK
+        # ==========================================================
         reward = 0
         if terminated:
-            reward = -100  # Große Strafe für's Verlieren
+            reward = -100  # Große Strafe für's Verlieren bleibt
         else:
-            reward = 1  # Kleine Belohnung für jeden überlebten Frame
+            # Belohnung dafür, in der Nähe des Zentrums zu sein
+            sweet_spot_center = self.robot_y + self.robot_height / 2
+            distance_to_center = abs(self.hoop_y - sweet_spot_center)
+
+            # Die Belohnung ist höher, je näher der Reifen am Zentrum ist.
+            # Max. Belohnung = 2.0, Min. Belohnung = 0
+            # Die 80 ist hier die Höhe der "Sweet Spot Zone" aus dem alten Code.
+            max_distance = 80
+            if distance_to_center < max_distance:
+                # Linearer Bonus: 2.0 wenn perfekt im Zentrum, 0 am Rand der Zone.
+                reward = 2.0 * (1 - (distance_to_center / max_distance))
+
+            # Kleine "Überlebensbelohnung" kann man zusätzlich geben, ist aber optional
+            reward += 0.1
+        # ==========================================================
 
         if self.render_mode == "human":
             self._render_frame()
 
         return self._get_obs(), reward, terminated, False, self._get_info()
-
     def render(self):
         """Diese Methode wird für das Anzeigen des Spiels aufgerufen."""
         if self.render_mode == "human":
@@ -175,12 +191,15 @@ if __name__ == '__main__':
         train_freq=4,
         gradient_steps=1,
         learning_rate=1e-4,  # 0.0001
-        tensorboard_log="./hula_dqn_tensorboard/"
+        tensorboard_log="./hula_dqn_tensorboard/",
+        exploration_fraction=0.2,
+        exploration_initial_eps=0.7,
+        exploration_final_eps=0.02
     )
 
     # 4. Trainiere das Modell
     print("Beginne mit dem Training...")
-    model.learn(total_timesteps=150000, progress_bar=True)
+    model.learn(total_timesteps=170000, progress_bar=True)
 
     # 5. Speichere das trainierte Modell
     model.save("hula_dqn_model")
