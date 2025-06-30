@@ -16,7 +16,7 @@ NUDGE_DOWN_POWER = 2.5  # Stupst den Reifen nach unten (positive Geschwindigkeit
 NUDGE_UP_POWER = -2.5  # Stupst den Reifen nach oben (negative Geschwindigkeitsänderung)
 
 # Schwellenwert, ab dem ein Eingriff möglich ist.
-INTERVENTION_THRESHOLD_STEPS = 200
+INTERVENTION_THRESHOLD_STEPS = 20
 
 if __name__ == '__main__':
     # 1. Erstelle die Spielumgebung im sichtbaren Modus
@@ -29,7 +29,7 @@ if __name__ == '__main__':
         print("\n--- STEUERUNG ---")
         print("Linksklick: Reifen sanft nach UNTEN stupsen.")
         print("Rechtsklick: Reifen sanft nach OBEN stupsen.")
-        print("Eingriff erst nach 200 Schritten möglich.")
+        print("Eingriff erst nach 20Schritten möglich.")
         print("-----------------\n")
 
     except FileNotFoundError:
