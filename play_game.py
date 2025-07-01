@@ -5,15 +5,11 @@ from stable_baselines3 import DQN
 # Wir importieren die HulaHoopEnv-Klasse aus Ihrer Trainings-Datei.
 from train_agent import HulaHoopEnv
 
-# ==============================================================================
-# INTERAKTIVES SPIEL MIT DER TRAINIERTEN KI (Version 2.0)
-# ==============================================================================
 
 # --- Interaktions-Parameter ---
-# NEU: Separate Stärke für Anstupsen nach oben und unten.
-#      Die Werte sind jetzt viel näher an der Spielphysik (z.B. KICK_POWER = 3.5).
-NUDGE_DOWN_POWER = 2.5  # Stupst den Reifen nach unten (positive Geschwindigkeitsänderung)
-NUDGE_UP_POWER = -2.5  # Stupst den Reifen nach oben (negative Geschwindigkeitsänderung)
+
+NUDGE_DOWN_POWER = 2.5
+NUDGE_UP_POWER = -2.5
 
 # Schwellenwert, ab dem ein Eingriff möglich ist.
 INTERVENTION_THRESHOLD_STEPS = 20
@@ -52,7 +48,7 @@ if __name__ == '__main__':
 
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if episode_steps > INTERVENTION_THRESHOLD_STEPS:
-                        # NEU: Unterscheidung zwischen Links- und Rechtsklick
+
                         if event.button == 1:  # Linksklick
                             print(f"Eingriff bei Schritt {episode_steps}: Stupse nach UNTEN.")
                             env.hoop_y_velocity += NUDGE_DOWN_POWER
@@ -62,7 +58,7 @@ if __name__ == '__main__':
                     else:
                         print(f"Noch {INTERVENTION_THRESHOLD_STEPS - episode_steps} Schritte bis Eingriff möglich.")
 
-            # KI wählt die nächste Aktion
+
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, done, truncated, info = env.step(action)
             episode_steps += 1

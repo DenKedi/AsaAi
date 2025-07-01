@@ -11,9 +11,6 @@ from stable_baselines3.common.evaluation import evaluate_policy
 import time
 
 
-# ==============================================================================
-# SCHRITT 3: DIE GYMNASIUM-UMGEBUNG
-# ==============================================================================
 class HulaHoopEnv(gym.Env):
     metadata = {'render_modes': ['human'], 'render_fps': 60}
 
@@ -83,7 +80,7 @@ class HulaHoopEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         """Setzt das Spiel auf einen leicht ZUFÄLLIGEN Anfangszustand zurück."""
-        super().reset(seed=seed)  # Diese Zeile ist wichtig, sie initialisiert den Zufallsgenerator self.np_random
+        super().reset(seed=seed)
 
         # Startposition des Reifens (+/- 20 Pixel um die Mitte)
         sweet_spot_center = self.robot_y + self.robot_height / 2
@@ -144,31 +141,20 @@ class HulaHoopEnv(gym.Env):
             # Bestrafung für hohe Geschwindigkeit (optional, wie von Ihnen hinzugefügt)
             reward -= abs(self.hoop_y_velocity) * 0.1
 
-        # ==========================================================
-        # HIER KOMMT DIE LOGIK FÜR DAS HUD HINZU
-        # ==========================================================
-        # Speichere die aktuelle Aktion und Belohnung als Instanzvariablen,
-        # damit die _render_frame-Methode darauf zugreifen kann.
         self.last_action = action
         self.last_reward = reward
 
-        # Aktualisiere die Zähler für die laufende Episode.
         self.current_episode_steps += 1
         self.current_episode_reward += reward
-        # ==========================================================
 
-        # Rendere den Frame, wenn der Modus auf "human" gesetzt ist.
         if self.render_mode == "human":
             self._render_frame()
 
-        # Gib alle notwendigen Werte zurück.
         return self._get_obs(), reward, terminated, False, info
     def render(self):
         """Anzeigen des Spiels """
         if self.render_mode == "human":
             return self._render_frame()
-
-        # In der HulaHoopEnv-Klasse:
 
     def _render_frame(self):
         """Enthält die gesamte Zeichen-Logik inkl. neuem HUD."""
@@ -177,9 +163,8 @@ class HulaHoopEnv(gym.Env):
             self.screen = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
             pygame.display.set_caption("Hula Hoop Roboter - KI Interaktion")
             self.clock = pygame.time.Clock()
-            self.font = pygame.font.Font(None, 28)  # Etwas kleinere Schrift für mehr Text
+            self.font = pygame.font.Font(None, 22)
 
-        # Hintergrund und Objekte zeichnen (wie bisher)
         self.screen.fill(self.BACKGROUND_COLOR)
         pygame.draw.rect(self.screen, self.ROBOT_COLOR, self.robot_rect)
         pygame.draw.rect(self.screen, self.ROBOT_COLOR, self.robot_head_rect)
@@ -187,9 +172,6 @@ class HulaHoopEnv(gym.Env):
         hoop_rect = pygame.Rect(self.robot_x + self.robot_width / 2 - hoop_width / 2, self.hoop_y, hoop_width, 25)
         pygame.draw.ellipse(self.screen, self.HOOP_COLOR, hoop_rect, 6)
 
-        # ==========================================================
-        # NEUES, DETAILLIERTES HEADS-UP DISPLAY (HUD)
-        # ==========================================================
         hud_texts = [
             "--- AGENTEN-STATUS ---",
             f"Schwung: {self.swing_speed:.2f}",
@@ -203,12 +185,10 @@ class HulaHoopEnv(gym.Env):
             f"Gesamtbelohnung: {self.current_episode_reward:.2f}",
         ]
 
-        # Zeichne jede Zeile des HUD
         for i, text in enumerate(hud_texts):
             text_surface = self.font.render(text, True, self.WHITE)
             self.screen.blit(text_surface, (10, 10 + i * 25))  # 25 Pixel Abstand pro Zeile
 
-        # Pygame-Events und Display-Update (wie bisher)
         pygame.event.pump()
         pygame.display.flip()
         self.clock.tick(self.metadata["render_fps"])
